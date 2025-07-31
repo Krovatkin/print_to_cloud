@@ -64,23 +64,40 @@ document.getElementById('print').onclick = async () => {
       token: result.pcloudToken
     }, (response) => {
       if (response?.success) {
-        status.innerHTML = `<span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">SUCCESS: Uploaded ${filename}</span>`;
+        const pcloudUrl = `https://my.pcloud.com/#/revisions?fileid=${response.fileId}`;
+        
+        status.innerHTML = `<div class="bg-green-100 text-green-800 px-3 py-2 rounded-md text-sm">
+          <div class="font-semibold text-green-900">SUCCESS</div>
+          <div class="mt-1">Uploaded: ${response.filename}</div>
+          <div class="mt-2">
+            <a href="${pcloudUrl}" target="_blank" 
+               class="inline-flex items-center px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors">
+              View in pCloud
+            </a>
+          </div>
+        </div>`;
+        
       } else {
         const errorMsg = response?.error || 'Unknown error';
-        status.innerHTML = `<span class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">ERROR: ${errorMsg}</span>`;
+        status.innerHTML = `<div class="bg-red-100 text-red-800 px-3 py-2 rounded-md text-sm">
+          <div class="font-semibold text-red-900">ERROR</div>
+          <div class="mt-1">${errorMsg}</div>
+        </div>`;
       }
       
       button.textContent = originalText;
       button.disabled = false;
       
-      // Clear status after 5 seconds
       setTimeout(() => {
         status.innerHTML = '';
-      }, 5000);
+      }, 8000);
     });
     
   } catch (error) {
-    status.innerHTML = `<span class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">ERROR: ${error.message}</span>`;
+    status.innerHTML = `<div class="bg-red-100 text-red-800 px-3 py-2 rounded-md text-sm">
+      <div class="font-semibold text-red-900">ERROR</div>
+      <div class="mt-1">${error.message}</div>
+    </div>`;
     button.textContent = originalText;
     button.disabled = false;
     

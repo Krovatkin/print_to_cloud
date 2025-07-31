@@ -1,42 +1,34 @@
-// Function to convert base64 to Uint8Array
-function base64ToUint8Array(base64) {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
-
-// Function to upload to pCloud (JavaScript version of Python script)
+// Function to upload to pCloud (returns fileId)
 async function uploadToPCloud(base64Data, filename, authToken) {
   try {
     console.log('Converting base64 to binary...');
     
-    // Convert base64 to blob
-    const uint8Array = base64ToUint8Array(base64Data);
-    const blob = new Blob([uint8Array], { type: 'application/pdf' });
+    const response = await fetch(`data:application/pdf;base64,${base64Data}`);
+    const blob = await response.blob();
     
     console.log('Uploading to pCloud...');
     
-    // Create FormData
     const formData = new FormData();
     formData.append('file', blob, filename);
     
-    // Upload to pCloud
     const uploadUrl = `https://api.pcloud.com/uploadfile?auth=${authToken}&path=/Reading`;
     
-    const response = await fetch(uploadUrl, {
+    const uploadResponse = await fetch(uploadUrl, {
       method: 'POST',
       body: formData
     });
     
-    const data = await response.json();
+    const data = await uploadResponse.json();
     
     if (data.result === 0) {
       console.log('✓ File uploaded successfully to pCloud:', filename);
-      console.log('File ID:', data.metadata[0].fileid);
-      return { success: true, data: data.metadata[0] };
+      const fileId = data.metadata[0].fileid;
+      
+      return { 
+        success: true, 
+        filename: filename,
+        fileId: fileId
+      };
     } else {
       throw new Error(data.error || 'Upload failed');
     }
@@ -47,7 +39,7 @@ async function uploadToPCloud(base64Data, filename, authToken) {
   }
 }
 
-// Handle messages from popup
+// Handle messages from popup (return fileId)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'printAndUpload') {
     const debuggee = {tabId: message.tabId};
@@ -66,12 +58,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else {
           console.log('PDF generated, uploading to pCloud...');
           
-          // Upload to pCloud
           const uploadResult = await uploadToPCloud(result.data, message.filename, message.token);
           
           if (uploadResult.success) {
             console.log('✓ Successfully uploaded to pCloud');
-            sendResponse({success: true});
+            sendResponse({
+              success: true, 
+              filename: uploadResult.filename,
+              fileId: uploadResult.fileId
+            });
           } else {
             console.log('❌ Upload failed:', uploadResult.error);
             sendResponse({success: false, error: uploadResult.error});
@@ -83,5 +78,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
   }
   
-  return true; // Keep message channel open for async response
+  return true;
 });
