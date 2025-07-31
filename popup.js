@@ -2,9 +2,9 @@
 function slugify(text) {
   return text
     .toLowerCase()
-    .replace(/[^\w\s-]/g, '') // Remove special characters
-    .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
-    .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 // Load saved token on popup open
@@ -19,17 +19,20 @@ document.addEventListener('DOMContentLoaded', () => {
 // Save token button
 document.getElementById('saveToken').onclick = () => {
   const token = document.getElementById('token').value.trim();
+  const status = document.getElementById('status');
+  
   if (token) {
     chrome.storage.local.set({pcloudToken: token}, () => {
-      document.getElementById('status').textContent = 'Token saved!';
-      document.getElementById('status').style.color = 'green';
+      status.innerHTML = '<span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">Token saved!</span>';
       setTimeout(() => {
-        document.getElementById('status').textContent = '';
+        status.innerHTML = '';
       }, 2000);
     });
   } else {
-    document.getElementById('status').textContent = 'Please enter a token';
-    document.getElementById('status').style.color = 'red';
+    status.innerHTML = '<span class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">Please enter a token</span>';
+    setTimeout(() => {
+      status.innerHTML = '';
+    }, 3000);
   }
 };
 
@@ -40,24 +43,19 @@ document.getElementById('print').onclick = async () => {
   const originalText = button.textContent;
   
   try {
-    // Check if token exists
     const result = await chrome.storage.local.get(['pcloudToken']);
     if (!result.pcloudToken) {
-      status.textContent = 'Please save your pCloud token first';
-      status.style.color = 'red';
+      status.innerHTML = '<span class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">Please save your pCloud token first</span>';
       return;
     }
     
     button.disabled = true;
-    status.style.color = 'blue';
     
-    status.textContent = 'Getting tab info...';
+    status.innerHTML = '<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">Getting tab info...</span>';
     const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
     
-    // Slugify the title for filename
     const filename = slugify(tab.title) + '.pdf';
-    
-    status.textContent = 'Converting to PDF...';
+    status.innerHTML = '<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">Converting to PDF...</span>';
     
     chrome.runtime.sendMessage({
       action: 'printAndUpload',
@@ -66,11 +64,10 @@ document.getElementById('print').onclick = async () => {
       token: result.pcloudToken
     }, (response) => {
       if (response?.success) {
-        status.textContent = `✓ Uploaded: ${filename}`;
-        status.style.color = 'green';
+        status.innerHTML = `<span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">SUCCESS: Uploaded ${filename}</span>`;
       } else {
-        status.textContent = `❌ Error: ${response?.error || 'Unknown error'}`;
-        status.style.color = 'red';
+        const errorMsg = response?.error || 'Unknown error';
+        status.innerHTML = `<span class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">ERROR: ${errorMsg}</span>`;
       }
       
       button.textContent = originalText;
@@ -78,14 +75,17 @@ document.getElementById('print').onclick = async () => {
       
       // Clear status after 5 seconds
       setTimeout(() => {
-        status.textContent = '';
+        status.innerHTML = '';
       }, 5000);
     });
     
   } catch (error) {
-    status.textContent = `❌ Error: ${error.message}`;
-    status.style.color = 'red';
+    status.innerHTML = `<span class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">ERROR: ${error.message}</span>`;
     button.textContent = originalText;
     button.disabled = false;
+    
+    setTimeout(() => {
+      status.innerHTML = '';
+    }, 5000);
   }
 };
