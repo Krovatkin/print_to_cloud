@@ -1,108 +1,152 @@
-// Function to slugify title
-function slugify(text) {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[\s_-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
+document.addEventListener('DOMContentLoaded', function() {
+  const authTokenInput = document.getElementById('authToken');
+  const uploadPathInput = document.getElementById('uploadPath');
+  const saveButton = document.getElementById('saveSettings');
+  const printButton = document.getElementById('printAndUpload');
+  const statusDiv = document.getElementById('status');
 
-// Load saved token on popup open
-document.addEventListener('DOMContentLoaded', () => {
-  chrome.storage.local.get(['pcloudToken'], (result) => {
-    if (result.pcloudToken) {
-      document.getElementById('token').value = result.pcloudToken;
-    }
-  });
-});
+  // Load saved settings
+  loadSettings();
 
-// Save token button
-document.getElementById('saveToken').onclick = () => {
-  const token = document.getElementById('token').value.trim();
-  const status = document.getElementById('status');
-  
-  if (token) {
-    chrome.storage.local.set({pcloudToken: token}, () => {
-      status.innerHTML = '<span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">Token saved!</span>';
-      setTimeout(() => {
-        status.innerHTML = '';
-      }, 2000);
-    });
-  } else {
-    status.innerHTML = '<span class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">Please enter a token</span>';
-    setTimeout(() => {
-      status.innerHTML = '';
-    }, 3000);
+  // Slugify function for filename
+  function slugify(text) {
+    return text
+      .toString()
+      .toLowerCase()
+      .replace(/\s+/g, '-')           // Replace spaces with -
+      .replace(/[^\w\-]+/g, '')       // Remove all non-word chars
+      .replace(/\-\-+/g, '-')         // Replace multiple - with single -
+      .replace(/^-+/, '')             // Trim - from start of text
+      .replace(/-+$/, '');            // Trim - from end of text
   }
-};
 
-// Print and upload button
-document.getElementById('print').onclick = async () => {
-  const button = document.getElementById('print');
-  const status = document.getElementById('status');
-  const originalText = button.textContent;
-  
-  try {
-    const result = await chrome.storage.local.get(['pcloudToken']);
-    if (!result.pcloudToken) {
-      status.innerHTML = '<span class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">Please save your pCloud token first</span>';
+  // Save settings
+  saveButton.addEventListener('click', function() {
+    const authToken = authTokenInput.value.trim();
+    const uploadPath = uploadPathInput.value.trim();
+    
+    if (!authToken) {
+      showStatus('Please enter an auth token', 'error');
       return;
     }
     
-    button.disabled = true;
+    if (!uploadPath) {
+      showStatus('Please enter an upload path', 'error');
+      return;
+    }
     
-    status.innerHTML = '<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">Getting tab info...</span>';
-    const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+    // Ensure path starts with /
+    const normalizedPath = uploadPath.startsWith('/') ? uploadPath : '/' + uploadPath;
     
-    const filename = slugify(tab.title) + '.pdf';
-    status.innerHTML = '<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">Converting to PDF...</span>';
-    
-    chrome.runtime.sendMessage({
-      action: 'printAndUpload',
-      tabId: tab.id,
-      filename: filename,
-      token: result.pcloudToken
-    }, (response) => {
-      if (response?.success) {
-        const pcloudUrl = `https://my.pcloud.com/#/revisions?fileid=${response.fileId}`;
-        
-        status.innerHTML = `<div class="bg-green-100 text-green-800 px-3 py-2 rounded-md text-sm">
-          <div class="font-semibold text-green-900">SUCCESS</div>
-          <div class="mt-1">Uploaded: ${response.filename}</div>
-          <div class="mt-2">
-            <a href="${pcloudUrl}" target="_blank" 
-               class="inline-flex items-center px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors">
-              View in pCloud
-            </a>
-          </div>
-        </div>`;
-        
+    // Save to localStorage
+    chrome.storage.local.set({
+      'pcloud_auth_token': authToken,
+      'pcloud_upload_path': normalizedPath
+    }, function() {
+      if (chrome.runtime.lastError) {
+        showStatus('Error saving settings: ' + chrome.runtime.lastError.message, 'error');
       } else {
-        const errorMsg = response?.error || 'Unknown error';
-        status.innerHTML = `<div class="bg-red-100 text-red-800 px-3 py-2 rounded-md text-sm">
-          <div class="font-semibold text-red-900">ERROR</div>
-          <div class="mt-1">${errorMsg}</div>
-        </div>`;
+        showStatus('Settings saved successfully!', 'success');
+        uploadPathInput.value = normalizedPath; // Update display
+        printButton.disabled = false;
+      }
+    });
+  });
+
+  // Print and upload
+  printButton.addEventListener('click', async function() {
+    try {
+      printButton.disabled = true;
+      printButton.textContent = 'Processing...';
+      showStatus('Generating PDF and uploading...', 'success');
+
+      // Get current tab
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      
+      // Get saved settings
+      const settings = await getStoredSettings();
+      
+      if (!settings.authToken || !settings.uploadPath) {
+        showStatus('Please save your settings first', 'error');
+        return;
+      }
+
+      // Generate filename using slugify
+      const slugifiedTitle = slugify(tab.title).substring(0, 50);
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const filename = `${slugifiedTitle}_${timestamp}.pdf`;
+
+      // Send message to background script
+      chrome.runtime.sendMessage({
+        action: 'printAndUpload',
+        tabId: tab.id,
+        filename: filename,
+        token: settings.authToken,
+        uploadPath: settings.uploadPath
+      }, function(response) {
+        if (response && response.success) {
+          showStatus(`Successfully uploaded: ${response.filename}`, 'success');
+        } else {
+          const errorMsg = response ? response.error : 'Unknown error occurred';
+          showStatus(`Upload failed: ${errorMsg}`, 'error');
+        }
+        
+        printButton.disabled = false;
+        printButton.textContent = 'Print & Upload to pCloud';
+      });
+
+    } catch (error) {
+      showStatus('Error: ' + error.message, 'error');
+      printButton.disabled = false;
+      printButton.textContent = 'Print & Upload to pCloud';
+    }
+  });
+
+  // Check if settings exist and enable/disable print button
+  authTokenInput.addEventListener('input', checkSettings);
+  uploadPathInput.addEventListener('input', checkSettings);
+
+  function loadSettings() {
+    chrome.storage.local.get(['pcloud_auth_token', 'pcloud_upload_path'], function(result) {
+      if (result.pcloud_auth_token) {
+        authTokenInput.value = result.pcloud_auth_token;
       }
       
-      button.textContent = originalText;
-      button.disabled = false;
+      if (result.pcloud_upload_path) {
+        uploadPathInput.value = result.pcloud_upload_path;
+      }
       
-      setTimeout(() => {
-        status.innerHTML = '';
-      }, 8000);
+      checkSettings();
     });
-    
-  } catch (error) {
-    status.innerHTML = `<div class="bg-red-100 text-red-800 px-3 py-2 rounded-md text-sm">
-      <div class="font-semibold text-red-900">ERROR</div>
-      <div class="mt-1">${error.message}</div>
-    </div>`;
-    button.textContent = originalText;
-    button.disabled = false;
-    
-    setTimeout(() => {
-      status.innerHTML = '';
-    }, 5000);
   }
-};
+
+  function getStoredSettings() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['pcloud_auth_token', 'pcloud_upload_path'], function(result) {
+        resolve({
+          authToken: result.pcloud_auth_token,
+          uploadPath: result.pcloud_upload_path
+        });
+      });
+    });
+  }
+
+  function checkSettings() {
+    const hasToken = authTokenInput.value.trim().length > 0;
+    const hasPath = uploadPathInput.value.trim().length > 0;
+    printButton.disabled = !(hasToken && hasPath);
+  }
+
+  function showStatus(message, type) {
+    statusDiv.textContent = message;
+    statusDiv.className = `status ${type}`;
+    statusDiv.style.display = 'block';
+    
+    // Hide status after 5 seconds for success messages
+    if (type === 'success') {
+      setTimeout(() => {
+        statusDiv.style.display = 'none';
+      }, 5000);
+    }
+  }
+});
