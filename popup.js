@@ -76,13 +76,23 @@ document.addEventListener('DOMContentLoaded', function() {
       const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
       const filename = `${slugifiedTitle}_${timestamp}.pdf`;
 
+      const uploadPath = uploadPathInput.value.trim();
+      
+      if (!uploadPath) {
+        showStatus('Please enter an upload path', 'error');
+        return;
+      }
+    
+      // Ensure path starts with /
+      const normalizedPath = uploadPath.startsWith('/') ? uploadPath : '/' + uploadPath;
+
       // Send message to background script
       chrome.runtime.sendMessage({
         action: 'printAndUpload',
         tabId: tab.id,
         filename: filename,
         token: settings.authToken,
-        uploadPath: settings.uploadPath
+        uploadPath: normalizedPath
       }, function(response) {
         if (response && response.success) {
           showStatus(`Successfully uploaded: ${response.filename}`, 'success');
